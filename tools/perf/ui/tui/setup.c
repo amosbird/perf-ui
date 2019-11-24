@@ -134,7 +134,7 @@ int ui__init(void)
 	err = SLsmg_init_smg();
 	if (err < 0)
 		goto out;
-	err = SLang_init_tty(-1, 0, 0);
+	err = SLang_init_tty(-1, 1, 0);
 	if (err < 0)
 		goto out;
 

@@ -34,6 +34,8 @@ struct annotate_browser {
 	struct annotation_options  *opts;
 	bool			    searching_backwards;
 	char			    search_bf[128];
+	struct annotation_line	   *pos;
+	u32			    idx;
 };
 
 static inline struct annotation *browser__annotation(struct ui_browser *browser)
@@ -476,7 +478,8 @@ static bool annotate_browser__jump(struct annotate_browser *browser,
 		ui_helpline__printf("Invalid jump offset: %" PRIx64, offset);
 		return true;
 	}
-
+	browser->pos = browser->selection;
+	browser->idx = browser->selection->idx;
 	annotate_browser__set_top(browser, &dl->al, idx);
 
 	return true;
@@ -724,7 +727,6 @@ static int annotate_browser__run(struct annotate_browser *browser,
 				nd = browser->curr_hot;
 			break;
 		case K_F1:
-		case 'h':
 			ui_browser__help_window(&browser->b,
 		"UP/DOWN/PGUP\n"
 		"PGDN/SPACE    Navigate\n"
@@ -748,6 +750,19 @@ static int annotate_browser__run(struct annotate_browser *browser,
 		"p             Toggle percent type [local/global]\n"
 		"b             Toggle percent base [period/hits]\n"
 		"?             Search string backwards\n");
+			continue;
+		case ' ':
+			{
+				struct disasm_line *dl = disasm_line(browser->selection);
+				if (browser->selection == NULL)
+					ui_helpline__puts("Huh? No selection. Report to linux-kernel@vger.kernel.org");
+				else if (browser->selection->line)
+					ui_browser__name_window(&browser->b, browser->selection->line);
+				else if (dl->ops.raw)
+					ui_browser__name_window(&browser->b, dl->ops.raw);
+				else
+					ui_helpline__puts("Actions are only available for source lines.");
+			}
 			continue;
 		case 'r':
 			{
@@ -779,6 +794,7 @@ static int annotate_browser__run(struct annotate_browser *browser,
 			notes->options->show_nr_jumps = !notes->options->show_nr_jumps;
 			annotation__update_column_widths(notes);
 			continue;
+		case CTRL('s'):
 		case '/':
 			if (annotate_browser__search(browser, delay_secs)) {
 show_help:
@@ -786,9 +802,11 @@ show_help:
 			}
 			continue;
 		case 'n':
-			if (browser->searching_backwards ?
-			    annotate_browser__continue_search_reverse(browser, delay_secs) :
-			    annotate_browser__continue_search(browser, delay_secs))
+			if (annotate_browser__continue_search(browser, delay_secs))
+				goto show_help;
+			continue;
+		case 'N':
+			if (annotate_browser__continue_search_reverse(browser, delay_secs))
 				goto show_help;
 			continue;
 		case '?':
@@ -806,6 +824,15 @@ show_help:
 					   notes->nr_asm_entries);
 		}
 			continue;
+		case 'h':
+			{
+				if (browser->pos)
+					annotate_browser__set_top(browser, browser->pos, browser->idx);
+				else
+					ui_helpline__puts("Jump back only available after a valid jump in current unit.");
+			}
+			continue;
+		case 'l':
 		case K_ENTER:
 		case K_RIGHT:
 		{
@@ -882,7 +909,7 @@ int hist_entry__tui_annotate(struct hist_entry *he, struct perf_evsel *evsel,
 {
 	/* reset abort key so that it can get Ctrl-C as a key */
 	SLang_reset_tty();
-	SLang_init_tty(0, 0, 0);
+	SLang_init_tty(0, 1, 0);
 
 	return map_symbol__tui_annotate(&he->ms, evsel, hbt, opts);
 }
@@ -908,6 +935,8 @@ int symbol__tui_annotate(struct symbol *sym, struct map *map,
 			.use_navkeypressed = true,
 		},
 		.opts = opts,
+		.pos = NULL,
+		.idx = 0,
 	};
 	int ret = -1, err;
 

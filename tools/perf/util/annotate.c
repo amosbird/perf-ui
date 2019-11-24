@@ -320,6 +320,19 @@ static inline const char *validate_comma(const char *c, struct ins_operands *ops
 	return c;
 }
 
+static void logfile(const char *fmt, ...) {
+	static FILE* fp = NULL;
+	va_list args;
+
+	va_start(args, fmt);
+	if(fp == NULL)
+	    fp = fopen("/tmp/perflog", "w");
+	vfprintf(fp, fmt, args);
+	fprintf(fp, "\n");
+	fflush(fp);
+	va_end(args);
+}
+
 static int jump__parse(struct arch *arch, struct ins_operands *ops, struct map_symbol *ms)
 {
 	struct map *map = ms->map;
@@ -327,38 +340,44 @@ static int jump__parse(struct arch *arch, struct ins_operands *ops, struct map_s
 	struct addr_map_symbol target = {
 		.map = map,
 	};
-	const char *c = strchr(ops->raw, ',');
+	/* const char *c = strchr(ops->raw, ','); */
 	u64 start, end;
 
-	ops->raw_comment = strchr(ops->raw, arch->objdump.comment_char);
-	c = validate_comma(c, ops);
+	// TODO, template comma breaks this
+	/* ops->raw_comment = strchr(ops->raw, arch->objdump.comment_char); */
+	/* c = validate_comma(c, ops); */
 
-	/*
-	 * Examples of lines to parse for the _cpp_lex_token@@Base
-	 * function:
-	 *
-	 * 1159e6c: jne    115aa32 <_cpp_lex_token@@Base+0xf92>
-	 * 1159e8b: jne    c469be <cpp_named_operator2name@@Base+0xa72>
-	 *
-	 * The first is a jump to an offset inside the same function,
-	 * the second is to another function, i.e. that 0xa72 is an
-	 * offset in the cpp_named_operator2name@@base function.
-	 */
-	/*
-	 * skip over possible up to 2 operands to get to address, e.g.:
-	 * tbnz	 w0, #26, ffff0000083cd190 <security_file_permission+0xd0>
-	 */
-	if (c++ != NULL) {
-		ops->target.addr = strtoull(c, NULL, 16);
-		if (!ops->target.addr) {
-			c = strchr(c, ',');
-			c = validate_comma(c, ops);
-			if (c++ != NULL)
-				ops->target.addr = strtoull(c, NULL, 16);
-		}
-	} else {
+	/* /\* */
+	/*  * Examples of lines to parse for the _cpp_lex_token@@Base */
+	/*  * function: */
+	/*  * */
+	/*  * 1159e6c: jne    115aa32 <_cpp_lex_token@@Base+0xf92> */
+	/*  * 1159e8b: jne    c469be <cpp_named_operator2name@@Base+0xa72> */
+	/*  * */
+	/*  * The first is a jump to an offset inside the same function, */
+	/*  * the second is to another function, i.e. that 0xa72 is an */
+	/*  * offset in the cpp_named_operator2name@@base function. */
+	/*  *\/ */
+	/* /\* */
+	/*  * skip over possible up to 2 operands to get to address, e.g.: */
+	/*  * tbnz	 w0, #26, ffff0000083cd190 <security_file_permission+0xd0> */
+	/*  *\/ */
+	/* if (c++ != NULL) { */
+	/* 	logfile("before conversion %s", c); */
+	/* 	ops->target.addr = strtoull(c, NULL, 16); */
+	/* 	if (!ops->target.addr) { */
+	/* 		c = strchr(c, ','); */
+	/* 		c = validate_comma(c, ops); */
+	/* 		if (c++ != NULL) */
+	/* 		{ */
+	/* 		    logfile("before conversion 2 %s", c); */
+	/* 		    ops->target.addr = strtoull(c, NULL, 16); */
+	/* 		} */
+	/* 	} */
+	/* } else { */
+		/* logfile("before conversion %s", ops->raw); */
 		ops->target.addr = strtoull(ops->raw, NULL, 16);
-	}
+	/* } */
 
 	target.addr = map__objdump_2mem(map, ops->target.addr);
 	start = map->unmap_ip(map, sym->start),
@@ -1459,6 +1478,8 @@ annotation_line__print(struct annotation_line *al, struct symbol *sym, u64 start
 	return 0;
 }
 
+extern char *cplus_demangle(const char *, int);
+
 /*
  * symbol__parse_objdump_line() parses objdump output (with -d --no-show-raw)
  * which looks like following
@@ -1527,6 +1548,11 @@ static int symbol__parse_objdump_line(struct symbol *sym, FILE *file,
 			parsed_line = tmp2 + 1;
 	}
 
+	if (offset == -1 && parsed_line) {
+		char * pp = cplus_demangle(parsed_line, 0);
+		if (pp)
+			parsed_line = pp;
+	}
 	args->offset  = offset;
 	args->line    = parsed_line;
 	args->line_nr = *line_nr;
@@ -1889,8 +1915,8 @@ static int symbol__disassemble(struct symbol *sym, struct annotate_args *args)
 		 " --stop-address=0x%016" PRIx64
 		 " -l -d %s %s -C \"$1\" 2>/dev/null|grep -v \"$1:\"|expand",
 		 opts->objdump_path ?: "objdump",
-		 opts->disassembler_style ? "-M " : "",
-		 opts->disassembler_style ?: "",
+		 "-M ",
+		 opts->disassembler_style ?: "intel",
 		 map__rip_2objdump(map, sym->start),
 		 map__rip_2objdump(map, sym->end),
 		 opts->show_asm_raw ? "" : "--no-show-raw",
