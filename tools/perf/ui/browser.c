@@ -233,6 +233,16 @@ int ui_browser__warning(struct ui_browser *browser, int timeout,
 	return key;
 }
 
+int ui_browser__name_window(struct ui_browser *browser, const char *text)
+{
+	int key;
+
+	while ((key = ui__name_window(text)) == K_RESIZE)
+		ui_browser__handle_resize(browser);
+
+	return key;
+}
+
 int ui_browser__help_window(struct ui_browser *browser, const char *text)
 {
 	int key;
@@ -408,11 +418,10 @@ int ui_browser__run(struct ui_browser *browser, int delay_secs)
 		}
 
 		if (browser->use_navkeypressed && !browser->navkeypressed) {
-			if (key == K_DOWN || key == K_UP ||
-			    (browser->columns && (key == K_LEFT || key == K_RIGHT)) ||
-			    key == K_PGDN || key == K_PGUP ||
-			    key == K_HOME || key == K_END ||
-			    key == ' ') {
+			if (key == K_DOWN || key == K_UP || key == 'j' || key == 'k' ||
+			    (browser->columns && (key == K_LEFT || key == K_RIGHT || key == 'h' || key == 'l')) ||
+			    key == K_PGDN || key == K_PGUP || key == 'd' || key == 'u' ||
+			    key == K_HOME || key == K_END || key == 'g' || key == 'G') {
 				browser->navkeypressed = true;
 				continue;
 			} else
@@ -421,6 +430,7 @@ int ui_browser__run(struct ui_browser *browser, int delay_secs)
 
 		switch (key) {
 		case K_DOWN:
+		case 'j':
 			if (browser->index == browser->nr_entries - 1)
 				break;
 			++browser->index;
@@ -430,6 +440,7 @@ int ui_browser__run(struct ui_browser *browser, int delay_secs)
 			}
 			break;
 		case K_UP:
+		case 'k':
 			if (browser->index == 0)
 				break;
 			--browser->index;
@@ -438,20 +449,42 @@ int ui_browser__run(struct ui_browser *browser, int delay_secs)
 				browser->seek(browser, -1, SEEK_CUR);
 			}
 			break;
+		case 'd':
+			browser->index += 20;
+			if (browser->index > browser->nr_entries - 1)
+				browser->index = browser->nr_entries - 1;
+			if (browser->index >= browser->top_idx + browser->rows) {
+				u64 old_top_idx = browser->top_idx;
+				browser->top_idx = browser->index - browser->rows + 1;
+				browser->seek(browser, browser->top_idx - old_top_idx, SEEK_CUR);
+			}
+			break;
+		case 'u':
+			if (browser->index < 20)
+				browser->index = 0;
+			else
+				browser->index -= 20;
+			if (browser->index < browser->top_idx) {
+				u64 old_top_idx = browser->top_idx;
+				browser->top_idx = browser->index;
+				browser->seek(browser, browser->top_idx - old_top_idx, SEEK_CUR);
+			}
+			break;
 		case K_RIGHT:
+		case 'l':
 			if (!browser->columns)
 				goto out;
 			if (browser->horiz_scroll < browser->columns - 1)
 				++browser->horiz_scroll;
 			break;
 		case K_LEFT:
+		case 'h':
 			if (!browser->columns)
 				goto out;
 			if (browser->horiz_scroll != 0)
 				--browser->horiz_scroll;
 			break;
 		case K_PGDN:
-		case ' ':
 			if (browser->top_idx + browser->rows > browser->nr_entries - 1)
 				break;
 
@@ -476,9 +509,11 @@ int ui_browser__run(struct ui_browser *browser, int delay_secs)
 			browser->seek(browser, -offset, SEEK_CUR);
 			break;
 		case K_HOME:
+		case 'g':
 			ui_browser__reset_index(browser);
 			break;
 		case K_END:
+		case 'G':
 			offset = browser->rows - 1;
 			if (offset >= browser->nr_entries)
 				offset = browser->nr_entries - 1;

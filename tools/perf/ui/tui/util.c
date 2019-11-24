@@ -164,6 +164,35 @@ next_key:
 	return key;
 }
 
+int ui__name_window(const char *text)
+{
+	int x, y, i;
+	int len = strlen(text), lines;
+	int max_len = 100, nr_lines = 20;
+	pthread_mutex_lock(&ui__lock);
+
+	y = SLtt_Screen_Rows / 2 - nr_lines / 2,
+	x = SLtt_Screen_Cols / 2 - max_len / 2;
+
+	SLsmg_set_color(0);
+	SLsmg_draw_box(y, x++, nr_lines, max_len);
+	SLsmg_gotorc(++y, x);
+	nr_lines -= 2;
+	max_len -= 2;
+	lines = (len - 1) / max_len + 1;
+	SLsmg_write_wrapped_string((unsigned char *)text, y, x,
+				   nr_lines, max_len, 1);
+	for (i = 0; i < nr_lines - lines; ++ i) {
+		SLsmg_gotorc(y + lines + i, x);
+		SLsmg_write_nstring((char *)" ", max_len);
+	}
+	SLsmg_refresh();
+
+	pthread_mutex_unlock(&ui__lock);
+
+	return ui__getch(0);
+}
+
 void __ui__info_window(const char *title, const char *text, const char *exit_msg)
 {
 	int x, y;

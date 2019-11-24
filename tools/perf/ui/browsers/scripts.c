@@ -165,7 +165,7 @@ void run_script(char *cmd)
 	 */
 	printf("\033[c\033[H\033[J");
 	fflush(stdout);
-	SLang_init_tty(0, 0, 0);
+	SLang_init_tty(0, 1, 0);
 	SLsmg_refresh();
 }
 
