@@ -119,6 +119,7 @@ struct tcp_request_sock {
 	const struct tcp_request_sock_ops *af_specific;
 	u64				snt_synack; /* first SYNACK sent time */
 	bool				tfo_listener;
+	bool				is_mptcp;
 	u32				txhash;
 	u32				rcv_isn;
 	u32				snt_isn;
@@ -223,7 +224,7 @@ struct tcp_sock {
 		fastopen_connect:1, /* FASTOPEN_CONNECT sockopt */
 		fastopen_no_cookie:1, /* Allow send/recv SYN+data without a cookie */
 		is_sack_reneg:1,    /* in recovery from loss with SACK reneg? */
-		unused:2;
+		fastopen_client_fail:2; /* reason why fastopen failed */
 	u8	nonagle     : 4,/* Disable Nagle algorithm?             */
 		thin_lto    : 1,/* Use linear timeouts for thin streams */
 		recvmsg_inq : 1,/* Indicate # of bytes in queue upon recvmsg */
@@ -354,6 +355,10 @@ struct tcp_sock {
 #define BPF_SOCK_OPS_TEST_FLAG(TP, ARG) 0
 #endif
 
+	u16 timeout_rehash;	/* Timeout-triggered rehash attempts */
+
+	u32 rcv_ooopack; /* Received out-of-order packets, for tcpinfo */
+
 /* Receiver side RTT estimation */
 	u32 rcv_rtt_last_tsecr;
 	struct {
@@ -377,6 +382,9 @@ struct tcp_sock {
 	u32	mtu_info; /* We received an ICMP_FRAG_NEEDED / ICMPV6_PKT_TOOBIG
 			   * while socket was owned by user.
 			   */
+#if IS_ENABLED(CONFIG_MPTCP)
+	bool	is_mptcp;
+#endif
 
 #ifdef CONFIG_TCP_MD5SIG
 /* TCP AF-Specific parts; only used by MD5 Signature support so far */
@@ -391,7 +399,7 @@ struct tcp_sock {
 	/* fastopen_rsk points to request_sock that resulted in this big
 	 * socket. Used to retransmit SYNACKs etc.
 	 */
-	struct request_sock *fastopen_rsk;
+	struct request_sock __rcu *fastopen_rsk;
 	u32	*saved_syn;
 };
 
@@ -445,8 +453,8 @@ static inline struct tcp_timewait_sock *tcp_twsk(const struct sock *sk)
 
 static inline bool tcp_passive_fastopen(const struct sock *sk)
 {
-	return (sk->sk_state == TCP_SYN_RECV &&
-		tcp_sk(sk)->fastopen_rsk != NULL);
+	return sk->sk_state == TCP_SYN_RECV &&
+	       rcu_access_pointer(tcp_sk(sk)->fastopen_rsk) != NULL;
 }
 
 static inline void fastopen_queue_tune(struct sock *sk, int backlog)
